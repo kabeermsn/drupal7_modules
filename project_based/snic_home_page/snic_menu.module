@@ -1,0 +1,499 @@
+<?php
+
+/**
+ * implements system theme settings alter
+ * to set instagram url and image in theme settings
+ */
+
+function snic_menu_form_system_theme_settings_alter(&$form, $form_state) {
+  $form['instagram_url'] = array(
+    '#title' => t('Instagram URL'),
+    '#type' => 'textfield',
+    '#default_value' => variable_get('instagram_url'),
+  );
+
+  $form['instagram_image'] = array(
+    '#type' => 'managed_file',
+    '#title' => t('Instagram Logo'),
+    '#size' => 40,
+    '#description' => t("Upload image Instagram logo"),
+    '#upload_location' => 'public://pictures',
+    '#default_value' => variable_get('instagram_image_fid', 0),
+  );
+
+  $form['snic_copy_right'] = array(
+    '#title' => t('SNIC copy-right'),
+    '#type' => 'textfield',
+    '#default_value' => variable_get('snic_copy_right'),
+    '#required' => TRUE,
+  );
+
+  $form['snic_quote_email'] = array(
+    '#title' => t('SNIC Request Quote Admin Email'),
+    '#type' => 'textfield',
+    '#required' => TRUE,
+    '#default_value' => variable_get('snic_quote_email', 'customer.service@snic.com.bh'),
+  );
+
+  $form['snic_career_email'] = array(
+    '#title' => t('SNIC Career Admin Email'),
+    '#type' => 'textfield',
+    '#required' => TRUE,
+    '#default_value' => variable_get('snic_career_email', 'recruitment@snic.com.bh'),
+  );
+
+  $form['snic_contact_email'] = array(
+    '#title' => t('SNIC Contact Us Admin Email'),
+    '#type' => 'textfield',
+    '#required' => TRUE,
+    '#default_value' => variable_get('snic_contact_email', 'snic.bh@snic.com.bh'),
+  );
+
+  $form['#submit'][] = 'save_system_custom_theme_settings';
+}
+
+function save_system_custom_theme_settings(&$form, $form_state) {
+  variable_set('snic_copy_right', $form_state['values']['snic_copy_right']);
+  variable_set('snic_quote_email', $form_state['values']['snic_quote_email']);
+  variable_set('snic_career_email', $form_state['values']['snic_career_email']);
+  variable_set('snic_contact_email', $form_state['values']['snic_contact_email']);
+  if($form_state['values']['instagram_url'] != '') variable_set('instagram_url', $form_state['values']['instagram_url']);
+  if (isset($form_state['values']['instagram_image']) && $form_state['values']['instagram_image'] != 0 ) {
+    $file = $form_state['values']['instagram_image'];
+    $file = file_load($file);
+    $file->status = FILE_STATUS_PERMANENT;
+    $file_saved =file_save($file);
+    file_usage_add($file, 'user', 'user', $file_saved->fid);
+    $fid = $file_saved->fid;
+    variable_set('instagram_image_fid', $fid);
+  }
+  else variable_set('instagram_image_fid', 0);
+}
+
+
+/**
+ * add background imahe for menu links (menu link form alter)
+ */
+function snic_menu_form_menu_edit_item_alter(&$form, &$form_state) {
+  $menuBGFidFirst = isset($form['options']['#value']['bg_image_fid'])? $form['options']['#value']['bg_image_fid'] : '';
+  $menuBGFidSecond = isset($form['options']['#value']['bg_image_fid_2'])? $form['options']['#value']['bg_image_fid_2'] : '';
+
+  $form['menu_bg_image_file'] = array(
+    '#type' => 'managed_file',
+    '#title' => t('Menu Background Image 1'),
+    '#default_value' => $menuBGFidFirst,
+    '#size' => 40,
+    '#description' => t("Upload image for menu link BG 1."),
+    '#upload_location' => 'public://pictures'
+  );
+
+  $form['current_menu_bg_image_file'] = array(
+    '#type' => 'managed_file',
+    '#title' => t('Menu Background Image 2'),
+    '#default_value' => $menuBGFidSecond,
+    '#size' => 40,
+    '#description' => t("Upload image for menu link BG 2."),
+    '#upload_location' => 'public://pictures'
+  );
+
+  $form['#submit'][] = "add_image_to_menu_edit_item_submit";
+}
+
+function add_image_to_menu_edit_item_submit(&$form, &$form_state) {
+  if (isset($form_state['values']['menu_bg_image_file']) && isset($form_state['values']['mlid']) && $form_state['values']['menu_bg_image_file'] != 0 && isset($form_state['values']['current_menu_bg_image_file']) && $form_state['values']['current_menu_bg_image_file'] != 0) {
+    $mlid = $form_state['values']['mlid'];
+    saveMenuBgImage($form_state['values']['menu_bg_image_file'], $mlid, 'bg_image_fid');
+    saveMenuBgImage($form_state['values']['current_menu_bg_image_file'], $mlid, 'bg_image_fid_2');
+  }
+  else {
+    $mlid = $form_state['values']['mlid'];
+    $existing_item = db_query('SELECT * FROM {menu_links} WHERE mlid = :mlid', array('mlid' => $mlid))->fetchAssoc();
+    $menuOptionsdata = unserialize($existing_item['options']);
+    if(isset($menuOptionsdata['bg_image_fid'])) unset($menuOptionsdata['bg_image_fid']);
+    if(isset($menuOptionsdata['bg_image_fid_2'])) unset($menuOptionsdata['bg_image_fid_2']);
+    $menuOptionsString = serialize($menuOptionsdata);
+
+    db_update("menu_links")
+    ->fields(array('options' => $menuOptionsString))
+    ->condition("mlid", $mlid, "=")
+    ->execute();
+  }
+}
+
+
+function saveMenuBgImage($file, $mlid, $varName) {
+  $file = file_load($file);
+  $file->status = FILE_STATUS_PERMANENT;
+  $file_saved =file_save($file);
+  file_usage_add($file_saved, 'snic_menu_menu_edit_item', 'menu_bg_image_file', $file_saved->fid);
+  $fid = $file_saved->fid;
+
+  // $mlid = $form_state['values']['mlid'];
+  $existing_item = db_query('SELECT * FROM {menu_links} WHERE mlid = :mlid', array('mlid' => $mlid))->fetchAssoc();
+  $menuOptionsdata = unserialize($existing_item['options']);
+  $menuOptionsdata[$varName] = $fid;
+  $menuOptionsString = serialize($menuOptionsdata);
+
+  db_update("menu_links")
+  ->fields(array('options' => $menuOptionsString))
+  ->condition("mlid", $mlid, "=")
+  ->execute();
+}
+
+
+/**
+ * implements hook_block_info
+ */
+function snic_menu_block_info() {
+  $blocks = array();
+
+  $blocks['main_menu_wrapper_block'] = array(
+    'info' => t('SNIC main menu Wrapper'),
+  );
+
+  $blocks['main_side_menus_block'] = array(
+    'info' => t('SNIC main side menus'),
+  );
+
+  $blocks['main_menu_navigation_block'] = array(
+    'info' => t('SNIC main navigation menus'),
+  );
+
+  $blocks['home_spotlight_block'] = array(
+    'info' => t('SNIC Home spotlight'),
+  );
+
+  $blocks['general_spotlight_block'] = array(
+    'info' => t('SNIC General Page spotlight'),
+  );
+
+  $blocks['home_header_section_block']= array(
+    'info' => t('SNIC Home Header Section Block'),
+  );
+
+  $blocks['general_header_section_block']= array(
+    'info' => t('SNIC General Header Section Block'),
+  );
+
+  $blocks['footer_menu_block']= array(
+    'info' => t('SNIC Footer Menu Block'),
+  );
+
+  $blocks['art_of_insurance_block']= array(
+    'info' => t('SNIC Art of Insurance spotlight block'),
+  );
+
+  $blocks['latest_news_block']= array(
+    'info' => t('SNIC Latest News block'),
+  );
+
+  $blocks['home_popup_block']= array(
+    'info' => t('SNIC Home popup block'),
+  );
+
+  return $blocks;
+}
+
+/**
+ * implementation of hook_block_view
+ */
+function snic_menu_block_view($delta='') {
+  $block = array();
+
+  switch($delta) {
+
+    case 'main_menu_wrapper_block' :
+      $block['content'] = theme('main_menu_wrapper');
+      break;
+
+    case 'main_side_menus_block' :
+      $block['content'] = theme('main_side_menus');
+      break;
+
+    case 'main_menu_navigation_block' :
+      $block['content'] = theme('main_nav_menus');
+      break;
+
+    case 'home_spotlight_block' :
+      $block['content'] = theme('home_spotlight');
+      break;
+
+    case 'general_spotlight_block' :
+          $block['content'] = theme('general_spotlight');
+          break;
+
+    case 'home_header_section_block' :
+      $block['content'] = theme('home_header_section');
+      break;
+
+    case 'general_header_section_block' :
+      $block['content'] = theme('general_header_section');
+      break;
+
+    case 'footer_menu_block' :
+      $block['content'] = theme('footer_menu');
+      break;
+
+    case 'art_of_insurance_block' :
+      $block['content'] = theme('art_of_insurance');
+      break;
+
+    case 'latest_news_block' :
+      $block['content'] = theme('latest_news');
+      break;
+
+    case 'home_popup_block' :
+      $block['content'] = theme('home_popup');
+      break;
+
+  }
+
+  return $block;
+}
+
+/**
+ * implementation of hook_theme
+ */
+function snic_menu_theme() {
+  $templates = array(
+    'main_menu_wrapper' => array(
+      'template' => 'templates/main-menu-wrapper',
+    ),
+    'main_side_menus' => array(
+      'template' => 'templates/main-side-menus',
+    ),
+    'main_nav_menus' => array(
+      'template' => 'templates/main-nav-menus',
+    ),
+    'home_spotlight' => array(
+      'template' => 'templates/home-spotlight',
+    ),
+    'general_spotlight' => array(
+      'template' => 'templates/general-spotlight',
+    ),
+    'home_header_section' => array(
+      'template' => 'templates/home-header-section-wrap',
+    ),
+    'general_header_section' => array(
+      'template' => 'templates/general-header-section-wrap',
+    ),
+    'footer_menu' => array(
+      'template' => 'templates/footer-menu',
+    ),
+    'art_of_insurance' => array(
+      'template' => 'templates/art-of-insurance',
+    ),
+    'latest_news' => array(
+      'template' => 'templates/latest-news',
+    ),
+    'home_popup' => array(
+      'template' => 'templates/home-popup',
+    ),
+  );
+  return $templates;
+}
+
+function template_preprocess_main_menu_wrapper(&$variables) {
+  $menuAllLinks = menu_navigation_links('menu-corporate-and-retail-menus');
+  $menuAllLinksArray = array();
+  foreach ($menuAllLinks as $key => $value) {
+    $menuArray = array();
+    if(isset($value['bg_image_fid'])) {
+      $file = file_load($value['bg_image_fid']);
+      $uri = $file->uri;
+      $value['bg_img_url'] = $uri;
+    }
+    if(isset($value['bg_image_fid_2'])) {
+      $file = file_load($value['bg_image_fid_2']);
+      $uri = $file->uri;
+      $value['bg_img_url_2'] = $uri;
+    }
+    if(!isset($value['attributes'])) $value['attributes'] = array();
+    $menuArray['parent'] = $value;
+    $parentMenuId = explode('-', $key);
+    $parentMenuId = $parentMenuId[1];
+
+    $menuChildrens = db_query('SELECT * FROM {menu_links} WHERE plid = :plid order by weight ASC', array('plid' => $parentMenuId))->fetchAll();
+    $menuArray['childrens'] = $menuChildrens;
+
+    $menuGrandChildrens = array();
+    foreach ($menuChildrens as $key => $value) {
+      $mlid = $value->mlid;
+      $menuGrandChildrens[] = db_query('SELECT * FROM {menu_links} WHERE plid = :plid order by weight ASC', array('plid' => $mlid))->fetchAll();
+    }
+
+    $menuArray['grand_childrens'] = $menuGrandChildrens;
+
+    $menuAllLinksArray[] = $menuArray;
+
+  }
+
+  $variables['allMenus'] = $menuAllLinksArray;
+}
+
+function template_preprocess_main_side_menus(&$variables) {
+  $menuSideLinks = menu_navigation_links('menu-side-main-menu-links');
+  $variables['sideMenus'] = $menuSideLinks;
+}
+
+function template_preprocess_main_nav_menus(&$variables) {
+  $menuNavLinks = menu_navigation_links('menu-corporate-and-retail-menus');
+  $variables['mainNavMenus'] = $menuNavLinks;
+
+  $argument1 = arg(0);
+  switch ($argument1) {
+    case 'node':
+        if(is_numeric(arg(1))) {
+          $node = node_load(arg(1));
+
+          switch ($node->type) {
+            case 'latest_news':
+                $argument1 = 'latest_news';
+              break;
+          }
+        }
+      break;
+  }
+
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node', '=')
+    ->entityCondition('bundle', 'general_spotlight', '=')
+    ->fieldCondition('field_select_page', 'value', $argument1, '=');
+  $generalSpotlight = $query->execute();
+  $generalSpotlights = isset($generalSpotlight['node'])? $generalSpotlight['node']:array();
+  $nidArray = array_keys($generalSpotlights);
+  $nodes = count($nidArray) ? entity_metadata_wrapper('node', $nidArray[0]):array();
+  $color = (isset($nodes->field_logo_color))?$nodes->field_logo_color->value():0;
+  $variables['logoColor'] = $color;
+}
+
+function template_preprocess_home_spotlight(&$variables) {
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node', '=')
+    ->entityCondition('bundle', 'home_main_spotlight', '=')
+    ->fieldOrderBy('field_snic_node_weight', 'value', 'ASC')
+    ->propertyOrderBy('changed', 'DESC');
+  $spotlight = $query->execute();
+
+  $spotlights = isset($spotlight['node'])? $spotlight['node']:array();
+  $nidArray = array_keys($spotlights);
+  $nodes = entity_load('node', $nidArray);
+
+  $variables['mainSpotlights'] = $nodes;
+}
+
+function template_preprocess_footer_menu(&$variables) {
+  $footerMenuLinks = menu_navigation_links('menu-footer-menu');
+  $variables['footerMenus'] = $footerMenuLinks;
+}
+
+function template_preprocess_art_of_insurance(&$variables) {
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node', '=')
+    ->entityCondition('bundle', 'art_of_insurance', '=')
+    ->fieldOrderBy('field_snic_node_weight', 'value', 'ASC')
+    ->propertyOrderBy('changed', 'DESC')
+    ->range(0, 10);
+  $spotlightArtInsurance = $query->execute();
+
+  $spotlightArtInsurances = isset($spotlightArtInsurance['node']) ? $spotlightArtInsurance['node']: array();
+  $nidArray = array_keys($spotlightArtInsurances);
+  $nodes = entity_load('node', $nidArray);
+
+  $variables['artOfInsuranceSpotlight'] = $nodes;
+}
+
+function template_preprocess_latest_news(&$variables) {
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node', '=')
+    ->entityCondition('bundle', 'latest_news', '=')
+    ->fieldOrderBy('field_snic_node_weight', 'value', 'ASC')
+    ->fieldOrderBy('field_news_date', 'value', 'DESC')
+    ->propertyOrderBy('changed', 'DESC')
+    ->range(0, 3);
+  $latestNews = $query->execute();
+
+  $latestNews = isset($latestNews['node']) ? $latestNews['node']: array();
+  $nidArray = array_keys($latestNews);
+  $nodes = entity_load('node', $nidArray);
+
+  $variables['latestNews'] = $nodes;
+}
+
+function template_preprocess_home_popup(&$variables) {
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node', '=')
+    ->entityCondition('bundle', 'home_pop_up', '=');
+  $popup = $query->execute();
+
+  $popups = isset($popup['node']) ? $popup['node']: array();
+  $nidArray = array_keys($popups);
+  $nodes = entity_load('node', $nidArray);
+
+  $variables['homePopUp'] = $nodes;
+
+  // show or hide popup
+  $showPopUp = 0;
+  $popEnabled = variable_get('home_pop_up');
+  if($popEnabled) {
+    if(!isset($_COOKIE['snic_popup'])) {
+      setcookie('snic_popup', 1);
+      $showPopUp = 1;
+    }
+  }
+  $variables['showPopup'] = $showPopUp;
+}
+
+function template_preprocess_general_spotlight(&$variables) {
+  $classes = '';
+  $argument1 = arg(0);
+  switch ($argument1) {
+    case 'media':
+        $classes = 'nws-tittle';
+      break;
+
+    case 'node':
+        if(is_numeric(arg(1))) {
+          $node = node_load(arg(1));
+
+          switch ($node->type) {
+            case 'latest_news':
+                $argument1 = 'latest_news';
+              break;
+          }
+        }
+      break;
+  }
+
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node', '=')
+    ->entityCondition('bundle', 'general_spotlight', '=')
+    ->fieldCondition('field_select_page', 'value', $argument1, '=');
+  $generalSpotlight = $query->execute();
+
+  $generalSpotlights = isset($generalSpotlight['node'])? $generalSpotlight['node']:array();
+  $nidArray = array_keys($generalSpotlights);
+  $nodes = count($nidArray) ? entity_metadata_wrapper('node', $nidArray[0]):array();
+
+  $variables['generalHeaderSpotlights'] = $nodes;
+  $variables['headerTextClass'] = $classes;
+}
+
+/**
+ * Implements hook_form_alter
+ * set popup enabled or not
+ */
+function snic_menu_form_home_pop_up_node_form_alter(&$form, &$form_state) {
+  $form['enable_popup'] = array(
+    '#type' => 'checkbox',
+    '#title' => t("Enable Home Popup"),
+    '#default_value' => variable_get('home_pop_up', 1),
+  );
+  $form['actions']['submit']['#submit'][] = 'snic_menu_home_popup_content_submit';
+}
+
+
+function snic_menu_home_popup_content_submit(&$form, &$form_state) {
+  $enablePopup = isset($form_state['input']['enable_popup'])? 1:0;
+  variable_set('home_pop_up', $enablePopup);
+}

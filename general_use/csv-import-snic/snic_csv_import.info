@@ -1,0 +1,4 @@
+name = SNIC CSV Import
+description = Import all vehicles from CSV
+core = 7.x
+package = 1 SNIC Web Site

@@ -1,0 +1,70 @@
+<?php
+
+/**
+ * implements hook_mennu
+ */
+function snic_csv_import_menu() {
+  $items = array();
+  $items['csv-import'] = array(
+    'title' => 'Vehicle CSV Import',
+    'page callback' => 'snic_vehicle_csv_import',
+    'access callback' => 'check_user_has_role',
+  );
+  return $items;
+}
+
+function check_user_has_role() {
+  global $user;
+  if (in_array('administrator', $user->roles)) {
+    return TRUE;
+  }
+  return FALSE;
+}
+
+function snic_vehicle_csv_import() {
+
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node', '=')
+    ->entityCondition('bundle', 'vehicle_manufactures', '=');
+  $branches = $query->execute();
+  $nodeIds = array_keys($branches['node']);
+  node_delete_multiple($nodeIds);
+
+
+  $make = db_select('manufacturer','n')
+  ->fields('n',array('VehicleMake'))
+  ->distinct()
+  ->execute();
+  $manufacturesArray = array();
+  foreach($make as $item) {
+    $make = $item->VehicleMake;
+    $modelsDB = db_select('manufacturer','n')
+    ->fields('n',array('VehicleType'))
+    ->condition('n.VehicleMake',$make,'=')
+    ->execute();
+
+    $models = array();
+    foreach($modelsDB as $modelItem) {
+      $models[] = $modelItem->VehicleType;
+    }
+
+    $values = array(
+      'type' => 'vehicle_manufactures',
+      'uid' => 0,
+      'status' => 1,
+      'comment' => 0,
+      'promote' => 0,
+      );
+
+    $entity = entity_create('node', $values);
+    $ewrapper = entity_metadata_wrapper('node', $entity);
+
+    $ewrapper->title->set($make);
+    $ewrapper->field_vehicle_model->set($models);
+    $ewrapper->save();
+  }
+
+
+
+
+}

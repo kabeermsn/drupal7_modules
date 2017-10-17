@@ -1,0 +1,127 @@
+<?php
+
+/**
+ * Implements hook_menu
+ */
+
+function events_calender_menu() {
+  $items = array();
+
+  $items['event-calender'] = array(
+    'title' => 'Events Calender',
+    'page callback' => 'getEventsForEventsCalender',
+    'access callback' => TRUE,
+  );
+
+  return $items;
+}
+
+function getEventsForEventsCalender() {
+  global $language;
+  drupal_add_css(drupal_get_path('theme', 'soc_bartik') . '/custom_theme/css/jquery.mCustomScrollbar.min.css');
+  drupal_add_css(drupal_get_path('theme', 'soc_bartik') . '/custom_theme/css/responsive-calendar.css');
+
+  drupal_add_js(drupal_get_path('theme', 'soc_bartik') . '/custom_theme/js/responsive-calendar.js', array('scope' => 'footer', 'group' => JS_THEME, 'weight' => 100));
+  drupal_add_js(drupal_get_path('theme', 'soc_bartik') . '/custom_theme/js/jquery.mCustomScrollbar.min.js', array('scope' => 'footer', 'group' => JS_THEME, 'weight' => 101));
+  drupal_add_js(drupal_get_path('module', 'events_calender') . '/js/events_calender.js', array('scope' => 'footer', 'group' => JS_THEME, 'weight' => 102));
+
+  $eventCalenderDetails = getEventsGroupedByDate();
+  drupal_add_js(array('language' => $language->language), 'setting');
+  drupal_add_js(array('calenderDetails' => ($eventCalenderDetails)), 'setting');
+
+  return array();
+}
+
+
+function getEventsGroupedByDate() {
+  $view = views_get_view('events_calender');
+  $view->set_display('block');
+  $view->pre_execute();
+  $view->execute();
+  $results = $view->result;
+
+  $datesArray = array();
+  $currentDate = date('Y-m-d');
+  $currentDateDetails = array(
+    'date' => $currentDate,
+    'month' => date('n'),
+    'year' => date('Y'),
+    'day' => date('j'),
+  );
+  $eventDetails = array();
+
+  foreach ($results as $key => $value) {
+    $nid = $value->nid;
+    global $base_url, $language;
+    $eventUrl = drupal_get_path_alias('node/'.$nid);
+    if($language->language == 'ar') $eventUrl = $base_url.'/ar/'.$eventUrl;
+    else $eventUrl = $base_url.'/'.$eventUrl;
+
+    $eventData = array(
+      'name' => strtoupper($value->node_title),
+      'url' => $eventUrl,
+      'id' => $nid,
+      );
+
+    $start = $value->field_field_event_date_from_to[0]['raw']['value'];
+    $end = $value->field_field_event_date_from_to[0]['raw']['value2'];
+    $datesForEvent = getAllDatesBetweenStartAndEnd($start, $end);
+    foreach ($datesForEvent as $dateKey => $timeStamp) {
+
+      if(isset($datesArray[$dateKey])) {
+        $eventArrayForDate = $datesArray[$dateKey]['eventArray'];
+        if(!in_array($nid, $eventArrayForDate)) {
+          $count = $datesArray[$dateKey]['number'] + 1;
+          $eventArrayForDate[] = $nid;
+          $datesArray[$dateKey] = array(
+            'number' => $count,
+            'eventArray' => $eventArrayForDate,
+            );
+        }
+
+      }
+      else {
+        $datesArray[$dateKey] = array(
+        'number' => 1,
+        'eventArray' => array($nid),
+        );
+      }
+
+      if(isset($eventDetails[$dateKey]['events'])) {
+        $storedEvents = $eventDetails[$dateKey]['events'];
+        $storedEvents[] = $eventData;
+        $eventDetails[$dateKey]['events'] = $storedEvents;
+      }
+      else {
+        $eventDetails[$dateKey]['events'] = array($eventData);
+        $eventDetails[$dateKey]['day'] = date('j', $timeStamp);
+        $eventDetails[$dateKey]['month'] = date('n', $timeStamp);
+        $eventDetails[$dateKey]['year'] = date('Y', $timeStamp);
+      }
+
+    }
+  }
+
+  $eventCalenderDetails = array(
+    'dates' => $datesArray,
+    'currentDate' => $currentDateDetails,
+    'eventDetails' => $eventDetails,
+  );
+
+  return $eventCalenderDetails;
+
+  // dsm($eventCalenderDetails);
+}
+
+
+function getAllDatesBetweenStartAndEnd($start, $end) {
+  $dates = array();
+  do{
+    $dateString = date('Y-m-d', $start);
+    $dates[$dateString] = $start;
+    $start = $start + 24*60*60;
+  }
+  while ($end >= $start);
+
+  return $dates;
+}

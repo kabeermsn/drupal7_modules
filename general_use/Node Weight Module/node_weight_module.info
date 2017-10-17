@@ -1,0 +1,4 @@
+name = Node Weight
+description = Add Weight to Nodes
+core = 7.x
+package = 1 SNIC Web Site

@@ -1,0 +1,4 @@
+name = SNIC Menu Module
+description = Create SNIC complex menus structure
+core = 7.x
+package = 1 SNIC Web Site

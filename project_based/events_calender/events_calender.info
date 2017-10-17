@@ -1,0 +1,4 @@
+name = SOC Events Calender Module
+description = Calender to list all Spring Of Culture events.
+core = 7.x
+package = 1 SOC Web Site

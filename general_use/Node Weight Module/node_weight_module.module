@@ -1,0 +1,305 @@
+<?php
+
+/**
+ * Implements hook_permission().
+ */
+function node_weight_module_permission() {
+  return array(
+    'node custom order' => array(
+      'title' => t('Order Node By Weight Field'),
+      'description' => t('Allow User to order nodes based on weight'),
+    ),
+  );
+}
+
+/**
+ * implements hook_mennu
+ */
+function node_weight_module_menu() {
+  $items = array();
+  $items['admin/custom-node-order'] = array(
+    'title' => 'Custom Node Ordering',
+    'description' => 'Menu for adding weight to node and its ordering',
+    'position' => 'left',
+    'weight' => -100, // Less weight so that it will appear to the extreme left, before dashboard.
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('node custom order'),
+    'file' => 'system.admin.inc',
+    'file path' => drupal_get_path('module', 'system'),
+  );
+
+  $items['admin/custom-node-order/node-weight'] = array(
+    'title' => 'Add Weight Field',
+    'page callback' => 'add_weight_to_nodes',
+    'description' => 'Add Weight Field to Existing Content Types',
+    'access arguments' => array('administer users'),
+    'type' => MENU_NORMAL_ITEM,
+    );
+
+  $items['admin/custom-node-order/manage'] = array(
+    'title' => 'Order Contents',
+    'page callback' => 'listContentTypeToOrder',
+    'description' => 'Order Contents of Pirticular Content Type',
+    'access arguments' => array('node custom order'),
+    'type' => MENU_NORMAL_ITEM,
+    );
+
+  return $items;
+}
+
+function add_weight_to_nodes() {
+
+  $bundles = node_type_get_types();
+  unset($bundles['webform']);
+  unset($bundles['captcha']);
+  $bundleNames = array_keys($bundles);
+
+  // $bundleNames = array('home_main_spotlight', 'latest_news', 'art_of_insurance');
+  $bundleNames = array('board-committees');
+
+  field_delete_field('field_snic_node_weight');
+
+  if (!field_info_field('field_snic_node_weight')) {
+
+    $field = array(
+      'field_name' => 'field_snic_node_weight',
+      'cardinality' => 1,
+      'type' => 'number_integer',
+    );
+    field_create_field($field);
+
+    foreach ($bundleNames as $key => $value) {
+      $instance = array(
+        'field_name' => 'field_snic_node_weight',
+        'cardinality' => 1,
+        'entity_type' => 'node',
+        'bundle' => $value,
+        'required' => TRUE,
+        'type' => 'number_integer',
+        'description' => 'Set Weight of node',
+        'label' => 'Weight',
+        'widget' => array(
+          'type' => 'number',
+        ),
+        'display' => array(
+          'default' => array(
+            'type' => 'text',
+          ),
+        ),
+        'default_value_function' => 'nodeGetDefaultValue',
+      );
+
+      if (!field_info_instance('node', 'field_snic_node_weight', $value)) {
+        field_create_instance($instance);
+        setDefaultWeightToNodesOfContentType($value);
+      }
+
+    }
+
+
+    return 'Weight Field Added for Nodes';
+  }
+  else return 'Weight Field Already Exists for Nodes';
+}
+
+function nodeGetDefaultValue() {
+  return array(array('value' => 0));
+}
+
+function setDefaultWeightToNodesOfContentType($bundle) {
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node', '=')
+  ->entityCondition('bundle', $bundle, '=');
+  $node_ids = $query->execute();
+
+  $nids = count($node_ids) ? $node_ids['node']: array();
+  $index = 0;
+  foreach ($nids as $key => $nid) {
+    $node = node_load($key);
+    $ewrapper = entity_metadata_wrapper('node', $node);
+    $ewrapper->field_snic_node_weight->set($index);
+    $ewrapper->save();
+    $index++;
+  }
+
+}
+
+function listContentTypeToOrder() {
+  $items = array();
+  $items['selectContent'] = drupal_get_form('selectContentTypeForm');
+  if(isset($_GET['type'])) {
+    $items['listContentsToOrder'] = drupal_get_form('order_node_by_weight_form');
+  }
+
+  return $items;
+}
+
+function selectContentTypeForm($form, &$form_state) {
+  $bundles = node_type_get_types();
+  $values = array();
+  foreach ($bundles as $key => $value) {
+    if (field_info_instance('node', 'field_snic_node_weight', $key)) $values[$key] = $value->name;
+  }
+
+  $defaultConType = reset(array_keys($values));
+  $contentType = (isset($_GET['type']))? $_GET['type']:$defaultConType;
+
+  $form['type'] = array(
+    '#title' => t('Content Type'),
+    '#type' => 'select',
+    '#default_value' => $contentType,
+    '#options' => $values,
+    );
+
+  $form['actions'] = array(
+    '#type' => 'actions',
+    'submit' => array(
+      '#type' => 'submit',
+      '#value' => t('Submit'),
+      ),
+    );
+
+  return $form;
+}
+
+function selectContentTypeForm_Submit($form, &$form_state) {
+  $contentType = $form_state['values']['type'];
+  $form_state['redirect'] = array(
+    'admin/custom-node-order/manage',
+    array(
+      'query' => array(
+        'type' => $contentType,
+        ),
+      ),
+    );
+}
+
+function order_node_by_weight_form($form, &$form_state) {
+  $bundleName = $_GET['type'];
+
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node', '=')
+    ->entityCondition('bundle', $bundleName, '=')
+    ->fieldOrderBy('field_snic_node_weight', 'value', 'ASC')
+    ->propertyOrderBy('changed', 'DESC');
+  $spotlightArtInsurance = $query->execute();
+
+  $spotlightArtInsurances = isset($spotlightArtInsurance['node']) ? $spotlightArtInsurance['node']: array();
+  $nidArray = array_keys($spotlightArtInsurances);
+  $nodeCount = count($nidArray);
+
+  $rows= array();
+  $form['#tree'] = TRUE;
+  $max = 60;
+  $index = 0;
+  foreach ($nidArray as $key => $nid) {
+    $ewrapper = entity_metadata_wrapper('node', $nid);
+    $title = $ewrapper->value()->title;
+    $created = date('d/M/Y H:i:s', $ewrapper->value()->created);
+    $updated = date('d/M/Y H:i:s', $ewrapper->value()->changed);
+    $weight = ($ewrapper->field_snic_node_weight->value()) ? $ewrapper->field_snic_node_weight->value():$index;
+
+    if(strlen($title) > $max)
+      $title = substr($title,0,$max).' ...';
+
+    $form['slides'][$nid]['id'] = array(
+      '#type' => 'hidden',
+      '#default_value' => $nid,
+      );
+        // Textfield to hold content id.
+    $form['slides'][$nid]['title'] = array(
+      '#type' => 'item',
+      '#title' => $title
+      );
+    $form['slides'][$nid]['created'] = array(
+      '#type' => 'item',
+      '#title' => $created
+      );
+    $form['slides'][$nid]['Updated'] = array(
+      '#type' => 'item',
+      '#title' => $updated
+      );
+        // This field is invisible, but contains sort info (weights).
+    $form['slides'][$nid]['weight'] = array(
+      '#type' => 'weight',
+      '#title' => t('Weight'),
+      '#delta' => $nodeCount,
+      '#title_display' => 'invisible',
+      '#default_value' => $weight,
+      );
+    $index++;
+  }
+
+  $form['submit'] = array('#type' => 'submit', '#value' => t('Save changes'));
+  return $form;
+}
+
+
+function node_weight_module_theme($existing, $type, $theme, $path) {
+  return array(
+    'order_node_by_weight_form' => array(
+      'render element' => 'form',
+      ),
+    );
+}
+
+function theme_order_node_by_weight_form($variables) {
+  $form = $variables['form'];
+
+  $rows = array();
+  foreach (element_children($form['slides']) as $nid) {
+    $form['slides'][$nid]['weight']['#attributes']['class'] = array('slides-order-weight');
+    $rows[] = array(
+      'data' => array(
+        array('class' => array('slide-cross')),
+        drupal_render($form['slides'][$nid]['title']),
+        drupal_render($form['slides'][$nid]['weight']),
+        drupal_render($form['slides'][$nid]['created']),
+        drupal_render($form['slides'][$nid]['Updated']),
+        ),
+      'class' => array('draggable'),
+      );
+  }
+
+  $header = array('',t('title'),t('position'), t('Created'),t('Updated'));
+  $output = drupal_render($form['note']);
+  $output .= theme('table', array('header' => $header, 'rows' => $rows, 'attributes' => array('id' => 'slides-order')));
+  $output .= drupal_render_children($form);
+
+  drupal_add_tabledrag('slides-order', 'order', 'sibling', 'slides-order-weight');
+
+  return $output;
+}
+
+
+function order_node_by_weight_form_submit($form, &$form_state) {
+    $slides = array();
+    foreach ($form_state['values']['slides'] as $slide) {
+        $slides[] = array(
+            'id' => $slide['id'],
+            'weight' => $slide['weight'],
+        );
+    }
+    if (!empty($slides)) {
+        usort($slides, '_node_weight_module_arraysort');
+    }
+    $position = 1;
+    foreach($slides as $slide){
+      $nid = $slide['id'];
+      $node = node_load($nid);
+      $ewrapper = entity_metadata_wrapper('node', $nid);
+      $ewrapper->field_snic_node_weight->set($position);
+      $ewrapper->save();
+      $position++;
+    }
+
+    drupal_set_message(t('Ordering have been saved.'));
+}
+
+// Custom array sort function by weight.
+function _node_weight_module_arraysort($a, $b) {
+    if (isset($a['weight']) && isset($b['weight'])) {
+        return $a['weight'] < $b['weight'] ? -1 : 1;
+    }
+    return 0;
+}
